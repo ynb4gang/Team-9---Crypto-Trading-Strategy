@@ -1,0 +1,326 @@
+{
+  "name": "Crypto Trading Bot - Simple Batch Fixed",
+  "nodes": [
+    {
+      "parameters": {},
+      "id": "851dab47-dd9e-4c6b-b9ba-6342451b7fc7",
+      "name": "Start Bot",
+      "type": "n8n-nodes-base.manualTrigger",
+      "typeVersion": 1,
+      "position": [
+        -2176,
+        192
+      ]
+    },
+    {
+      "parameters": {
+        "url": "https://raw.githubusercontent.com/dryjins/aib/main/2026/l4/crypto_features_3months.csv",
+        "options": {}
+      },
+      "id": "4eea2d20-8714-42a8-b1aa-c0901e53a83d",
+      "name": "1. Load Market Data1",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        -1744,
+        80
+      ]
+    },
+    {
+      "parameters": {
+        "url": "https://raw.githubusercontent.com/dryjins/aib/main/2026/l4/crypto_news_3months.csv",
+        "options": {}
+      },
+      "id": "8f3a6b5b-f16b-4406-9b49-ed24dcee5044",
+      "name": "2. Load News Data1",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        -1744,
+        288
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "const input = $input.first();\nlet text = '';\nif (typeof input.json === 'string') text = input.json;\nelse if (input.json.data) text = input.json.data;\nelse if (input.binary) text = Buffer.from(input.binary.data.data, 'base64').toString('utf-8');\n\nconst lines = text.split('\\n').filter(l => l.trim());\nconst headers = lines[0].split(',').map(h => h.trim());\n\nconst result = [];\nfor (let i = 1; i < lines.length; i++) {\n  const line = lines[i];\n  if (!line.trim()) continue;\n  const values = [];\n  let current = '';\n  let inQuotes = false;\n  for (let char of line) {\n    if (char === '\"') inQuotes = !inQuotes;\n    else if (char === ',' && !inQuotes) {\n      values.push(current.trim());\n      current = '';\n    } else current += char;\n  }\n  values.push(current.trim());\n  const obj = {};\n  headers.forEach((h, idx) => obj[h] = values[idx] || '');\n  result.push({ json: obj });\n}\nreturn result;"
+      },
+      "id": "0583d407-b105-4a0e-b41d-ce1ac7784a59",
+      "name": "Parse CSV (Market)1",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -1520,
+        80
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "const input = $input.first();\nlet text = '';\nif (typeof input.json === 'string') text = input.json;\nelse if (input.json.data) text = input.json.data;\nelse if (input.binary) text = Buffer.from(input.binary.data.data, 'base64').toString('utf-8');\n\nconst lines = text.split('\\n').filter(l => l.trim());\nconst headers = lines[0].split(',').map(h => h.trim());\n\nconst result = [];\nfor (let i = 1; i < lines.length; i++) {\n  const line = lines[i];\n  if (!line.trim()) continue;\n  const values = [];\n  let current = '';\n  let inQuotes = false;\n  for (let char of line) {\n    if (char === '\"') inQuotes = !inQuotes;\n    else if (char === ',' && !inQuotes) {\n      values.push(current.trim());\n      current = '';\n    } else current += char;\n  }\n  values.push(current.trim());\n  const obj = {};\n  headers.forEach((h, idx) => obj[h] = values[idx] || '');\n  result.push({ json: obj });\n}\nreturn result;"
+      },
+      "id": "9e994432-99b4-4da7-a9c0-2aa8f3a148a9",
+      "name": "Parse CSV (News)1",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -1520,
+        288
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "const newsByDate = {};\nfor (const item of $input.all()) {\n  let d = item.json.date || (item.json.datetime ? item.json.datetime.split(' ')[0] : '');\n  if (!d) continue;\n  if (!newsByDate[d]) newsByDate[d] = [];\n  newsByDate[d].push(item.json.title);\n}\nreturn [{ json: { newsByDate } }];"
+      },
+      "id": "59131227-3654-4070-b907-9538d6122096",
+      "name": "Group News1",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -1312,
+        288
+      ]
+    },
+    {
+      "parameters": {},
+      "id": "88c9fa7f-e5a7-41d6-9a64-2c2bdce47a5b",
+      "name": "Wait for Both1",
+      "type": "n8n-nodes-base.merge",
+      "typeVersion": 2.1,
+      "position": [
+        -1088,
+        96
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "const allItems = $input.all();\nlet newsLookup = {};\nconst marketData = [];\n\nfor (const item of allItems) {\n  if (item.json.newsByDate) newsLookup = item.json.newsByDate;\n  else if (item.json.date) marketData.push(item);\n}\n\nmarketData.sort((a, b) => new Date(a.json.date) - new Date(b.json.date));\n\nconst merged = [];\nfor (const item of marketData) {\n  let d = item.json.date.split(' ')[0];\n  const news = newsLookup[d] || [];\n  const newsText = news.length > 0 ? news.slice(0, 3).join(' | ') : \"Market is quiet today.\";\n\n  merged.push({\n    json: {\n      ...item.json,\n      news_text: newsText,\n      news_count: news.length\n    }\n  });\n}\n\nreturn merged;"
+      },
+      "id": "7e9ae900-4cc5-494b-8d3d-e284083cb781",
+      "name": "3. Merge Daily Data1",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -896,
+        96
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "// Simple Batch Preparation\nconst allItems = $input.all();\nconst inputsArray = allItems.map(item => item.json.news_text);\n\n// We store original items to merge later\nreturn [{\n  json: {\n    batch_inputs: inputsArray,\n    original_items: allItems.map(i => i.json)\n  }\n}];"
+      },
+      "id": "9d4e39da-559b-497a-99f0-21b784826efa",
+      "name": "4. Prepare Batch1",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -640,
+        96
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://router.huggingface.co/hf-inference/models/distilbert/distilbert-base-uncased-finetuned-sst-2-english",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpBearerAuth",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Authorization",
+              "value": "Bearer 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"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ {\"inputs\": $json.batch_inputs} }}",
+        "options": {}
+      },
+      "id": "d0292db1-63f6-4595-942f-bdc58678cd34",
+      "name": "5. HF Sentiment (Single Batch)1",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        -384,
+        96
+      ],
+      "credentials": {
+        "httpHeaderAuth": {
+          "id": "ggntvTTh0gZ99DLH",
+          "name": "Header Auth account"
+        },
+        "httpBearerAuth": {
+          "id": "1AhDfVfGuqKevoAs",
+          "name": "Bearer Auth account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "// === Strategy Core (Portfolio + Risk Metrics) ===\n\nconst rootItem = $input.first();\n\n// --- 1. Load Input Data ---\nconst hfPayload = rootItem.json.data || rootItem.json;\nconst sourceNode = $(\"4. Prepare Batch1\").first();\nconst priceRows = sourceNode.json.original_items;\n\nif (!priceRows) throw new Error(\"original_items not found\");\n\n// --- 2. Normalize Sentiment Output ---\nlet sentimentList = hfPayload;\nif (!Array.isArray(hfPayload)) {\n  sentimentList = [hfPayload];\n}\n\n// --- 3. Portfolio Initialization ---\nconst assetList = [...new Set(priceRows.map(r => r.ticker))];\nconst capitalUnit = 10000 / assetList.length;\n\nconst ledger = {};\n\nassetList.forEach(asset => {\n  ledger[asset] = {\n    freeCash: capitalUnit,\n    positionSize: 0,\n    hasPosition: false,\n    avgEntry: 0,\n    mtmValue: capitalUnit\n  };\n});\n\n// --- 4. Main Backtest Loop ---\nconst executionLog = [];\n\nlet closedTrades = 0;\nlet profitableTrades = 0;\nlet sumProfit = 0;\nlet sumLoss = 0;\n\nconst steps = Math.min(priceRows.length, sentimentList.length);\n\nfor (let k = 0; k < steps; k++) {\n\n  const row = priceRows[k];\n  const sentimentBlock = sentimentList[k];\n\n  const asset = row.ticker;\n  const marketPrice = Number.parseFloat(row.price || row.close);\n\n  const account = ledger[asset];\n  if (!account) continue;\n\n  // --- Sentiment Evaluation ---\n  let dominantSignal = { score: 0, label: \"NEUTRAL\" };\n\n  if (Array.isArray(sentimentBlock)) {\n    dominantSignal = sentimentBlock.reduce((x, y) =>\n      y.score > x.score ? y : x, { score: 0 }\n    );\n  } else if (sentimentBlock?.label) {\n    dominantSignal = sentimentBlock;\n  }\n\n  const label = dominantSignal.label || \"NEUTRAL\";\n  const score = dominantSignal.score || 0;\n\n  // --- Indicator Handling ---\n  const rsiRaw = Number.parseFloat(row.rsi);\n  const bbRaw = Number.parseFloat(row.bb_position);\n  const macdRaw = Number.parseFloat(row.macd_hist);\n\n  const rsiVal = Number.isFinite(rsiRaw) ? rsiRaw : 50;\n  const bbVal = Number.isFinite(bbRaw) ? bbRaw : 0.5;\n  const macdVal = Number.isFinite(macdRaw) ? macdRaw : 0;\n\n  // --- Strategy Conditions ---\n  const bullish = label === \"POSITIVE\" && score > 0.7;\n  const bearish = label === \"NEGATIVE\" && score > 0.7;\n\n  const rsiOversold = rsiVal < 40;\n  const rsiOverbought = rsiVal > 60;\n\n  const bbLower = bbVal < 0.3;\n  const bbUpper = bbVal > 0.7;\n\n  const enterLong =\n    bullish ||\n    (rsiOversold && macdVal > -5) ||\n    bbLower;\n\n  const exitLong =\n    bearish ||\n    rsiOverbought ||\n    bbUpper;\n\n  const signal = enterLong ? \"buy\" : \"sell\";\n\n  const note = signal === \"buy\"\n    ? `BUY|S:${score.toFixed(2)} R:${rsiVal.toFixed(1)} B:${bbVal.toFixed(2)} M:${macdVal.toFixed(2)}`\n    : `SELL|S:${score.toFixed(2)} R:${rsiVal.toFixed(1)} B:${bbVal.toFixed(2)} M:${macdVal.toFixed(2)}`;\n\n  // --- Execution Engine ---\n  let realized = 0;\n  let order = \"none\";\n\n  if (signal === \"buy\" && !account.hasPosition) {\n    account.avgEntry = marketPrice;\n    account.positionSize = account.freeCash / marketPrice;\n    account.freeCash = 0;\n    account.hasPosition = true;\n    order = \"buy\";\n\n  } else if (signal === \"sell\" && account.hasPosition) {\n\n    const liquidation = account.positionSize * marketPrice;\n    realized = liquidation - (account.positionSize * account.avgEntry);\n\n    if (realized > 0) {\n      profitableTrades++;\n      sumProfit += realized;\n    } else {\n      sumLoss += Math.abs(realized);\n    }\n\n    account.freeCash = liquidation;\n    account.positionSize = 0;\n    account.hasPosition = false;\n    closedTrades++;\n    order = \"sell\";\n  }\n\n  const equityNow = account.hasPosition\n    ? account.positionSize * marketPrice\n    : account.freeCash;\n\n  account.mtmValue = equityNow;\n\n  executionLog.push({\n    date: row.date,\n    asset,\n    price: marketPrice,\n    signal,\n    order,\n    pnl: realized !== 0 ? realized.toFixed(2) : \"\",\n    equity: equityNow.toFixed(2),\n    sentiment: label,\n    score: score.toFixed(2),\n    rsi: rsiVal,\n    comment: note\n  });\n}\n\n// --- 5. Equity Curve ---\nconst equityByDay = {};\nconst dayIndex = [...new Set(executionLog.map(e => e.date))].sort();\n\nexecutionLog.forEach(e => {\n  if (!equityByDay[e.date]) equityByDay[e.date] = 0;\n  equityByDay[e.date] += Number.parseFloat(e.equity);\n});\n\nconst curve = dayIndex.map(d => equityByDay[d]);\n\n// --- 6. Risk Metrics ---\nlet highWatermark = -Infinity;\nlet drawdownMax = 0;\nconst returnsArr = [];\n\nfor (const value of curve) {\n  if (value > highWatermark) highWatermark = value;\n  const dd = (highWatermark - value) / highWatermark;\n  if (dd > drawdownMax) drawdownMax = dd;\n}\n\nfor (let i = 1; i < curve.length; i++) {\n  const ret = curve[i - 1] !== 0\n    ? (curve[i] - curve[i - 1]) / curve[i - 1]\n    : 0;\n  returnsArr.push(ret);\n}\n\nconst meanReturn =\n  returnsArr.reduce((a, b) => a + b, 0) / returnsArr.length || 0;\n\nconst varReturn =\n  returnsArr.reduce((a, b) =>\n    a + Math.pow(b - meanReturn, 2), 0\n  ) / returnsArr.length || 0;\n\nconst vol = Math.sqrt(varReturn);\nconst sharpe =\n  vol !== 0 ? (meanReturn / vol) * Math.sqrt(365) : 0;\n\n// --- Final Stats ---\nconst endingEquity = curve[curve.length - 1] || 10000;\nconst performance = ((endingEquity - 10000) / 10000) * 100;\nconst winRatio = closedTrades > 0\n  ? (profitableTrades / closedTrades) * 100\n  : 0;\n\nconst pfRatio =\n  sumLoss > 0\n    ? sumProfit / sumLoss\n    : (sumProfit > 0 ? 999 : 0);\n\nreturn [{\n  json: {\n    summary: {\n      trades: closedTrades,\n      win_rate: winRatio.toFixed(2) + \"%\",\n      profit_factor: pfRatio.toFixed(2),\n      total_return: performance.toFixed(2) + \"%\",\n      sharpe_ratio: sharpe.toFixed(2),\n      max_drawdown: \"-\" + (drawdownMax * 100).toFixed(2) + \"%\",\n      final_balance: \"$\" + endingEquity.toFixed(2)\n    },\n    log: executionLog\n  }\n}];"
+      },
+      "id": "f651027e-a918-4b98-816b-2d00669e041c",
+      "name": "6. Final Logic & Metrics1",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -144,
+        96
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "const input = $input.first();\n\nconst trades = input.json.log;\nconst summary = input.json.summary;\n\nif (!trades) throw new Error(\"No trade data\");\n\nconst header = 'date,asset,price,signal,order,rsi,sentiment,comment\\n';\n\nconst csvRows = trades.map(t => {\n  const safeComment = (t.comment || '').replace(/\"/g, \"'\");\n  return `${t.date},${t.asset},${t.price},${t.signal},${t.order},${t.rsi},${t.sentiment},\"${safeComment}\"`;\n}).join('\\n');\n\nconst csvContent = header + csvRows;\n\nreturn [{\n  json: {\n    summary: summary,\n    message: \"CSV Ready\"\n  },\n  binary: {\n    data: {\n      data: Buffer.from(csvContent).toString('base64'),\n      mimeType: 'text/csv',\n      fileName: 'final_results.csv'\n    }\n  }\n}];"
+      },
+      "id": "9e07d301-9f4f-449d-b5a6-633b9a279a38",
+      "name": "7. Export CSV1",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        112,
+        96
+      ]
+    }
+  ],
+  "pinData": {},
+  "connections": {
+    "Start Bot": {
+      "main": [
+        [
+          {
+            "node": "1. Load Market Data1",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "2. Load News Data1",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "1. Load Market Data1": {
+      "main": [
+        [
+          {
+            "node": "Parse CSV (Market)1",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "2. Load News Data1": {
+      "main": [
+        [
+          {
+            "node": "Parse CSV (News)1",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Parse CSV (Market)1": {
+      "main": [
+        [
+          {
+            "node": "Wait for Both1",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Parse CSV (News)1": {
+      "main": [
+        [
+          {
+            "node": "Group News1",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Group News1": {
+      "main": [
+        [
+          {
+            "node": "Wait for Both1",
+            "type": "main",
+            "index": 1
+          }
+        ]
+      ]
+    },
+    "Wait for Both1": {
+      "main": [
+        [
+          {
+            "node": "3. Merge Daily Data1",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "3. Merge Daily Data1": {
+      "main": [
+        [
+          {
+            "node": "4. Prepare Batch1",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "4. Prepare Batch1": {
+      "main": [
+        [
+          {
+            "node": "5. HF Sentiment (Single Batch)1",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "5. HF Sentiment (Single Batch)1": {
+      "main": [
+        [
+          {
+            "node": "6. Final Logic & Metrics1",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "6. Final Logic & Metrics1": {
+      "main": [
+        [
+          {
+            "node": "7. Export CSV1",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": false,
+  "settings": {
+    "executionOrder": "v1",
+    "binaryMode": "separate",
+    "availableInMCP": false
+  },
+  "versionId": "e8f85fb5-55f1-4907-af61-894cef30db70",
+  "meta": {
+    "instanceId": "1e9791ba8ea49be955304bb860c4fe3e4b974194a274b6bed670337b64d5e9fc"
+  },
+  "id": "CWvYQreMvNNN5MXt",
+  "tags": []
+}
